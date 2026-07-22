@@ -8,7 +8,7 @@ https://www.linkedin.com/in/sl-osint/
 
 ## Abstract
 
-Contemporary threat models for autonomous AI agents assume a fixed infrastructure substrate — a server, container, or persistent process that houses the agent's state and reasoning. This paper challenges that assumption. We propose and demonstrate Transit-Resident Agents (TRAs): a model in which an agent's complete state exists exclusively within encapsulated network packet payloads, with no disk persistence, no fixed process, and no single identifiable host. We implement a working proof-of-concept in two phases. In the first phase, we demonstrate pure state persistence across 16,500 hops over 4.38 hours with zero integrity degradation. In the second phase, we integrate a local LLM (Llama 3.2 3B via Ollama) and demonstrate sustained distributed cognition across 7,190 hops over 2.55 hours — with zero integrity failures and an emergent agent self-model that was not explicitly programmed. We characterize the failure mode under node termination, identify the node as the primary attack surface, propose a detection methodology based on integrity fingerprinting and beacon analysis, and identify the born timestamp as the sole persistent forensic artifact of a TRA. Our findings suggest that existing endpoint and network detection frameworks are architecturally blind to this threat class, and that a TRA presents an unprecedented forensic evidence vacuum — no binary on disk, no persistent process, no attributable source IP, and no recoverable artifact under standard incident response methodology.
+Contemporary threat models for autonomous AI agents assume a fixed infrastructure substrate — a server, container, or persistent process that houses the agent's state and reasoning. This paper challenges that assumption. We propose and demonstrate Transit-Resident Agents (TRAs): a model in which an agent's complete state exists exclusively within encapsulated network packet payloads, with no disk persistence, no fixed process, and no single identifiable host. We implement a working proof-of-concept in two phases. In the first phase, we demonstrate pure state persistence across 16,500 hops over 4.38 hours with zero integrity degradation. In the second phase, we integrate a local LLM (Llama 3.2 3B via Ollama) and demonstrate sustained distributed cognition across 14,790 hops over 1.28 hours — with zero integrity failures, stable packet size averaging 979 bytes, total bandwidth consumption of 4.6MB, and an average node memory footprint of 11.35MB. We document the progressive development of networking-accurate self-descriptions by the LLM across thousands of hops — descriptions not present in the original instruction. We characterize the failure mode under node termination, identify the node as the primary attack surface, propose a detection methodology based on integrity fingerprinting and beacon analysis, and identify the born timestamp as the sole persistent forensic artifact of a TRA. We survey existing detection platforms and confirm the complete absence of rules specific to this threat class. We identify four exfiltration channels viable from outside the target network, six external attack vectors for initial node establishment, and compare TRA to existing artifact-free techniques — identifying it as the only known technique with no fixed host. Our findings suggest that existing endpoint and network detection frameworks are architecturally blind to this threat class, and that a TRA presents an unprecedented forensic evidence vacuum.
 
 ---
 
@@ -32,13 +32,17 @@ This paper makes the following contributions:
 
 1. We define the Transit-Resident Agent (TRA) threat model — an agent whose state lives exclusively in network packet payloads with no fixed storage
 2. We implement a working PoC demonstrating pure state persistence across 16,500 hops over 4.38 hours with zero degradation
-3. We extend the PoC with local LLM integration demonstrating distributed cognition across 7,190 hops over 2.55 hours
-4. We document an emergent agent self-model that developed without explicit programming
+3. We extend the PoC with local LLM integration demonstrating distributed cognition across 14,790 hops with full metrics
+4. We document the progressive development of networking-accurate self-descriptions not present in the original instruction
 5. We empirically characterize the failure mode under node termination
 6. We identify the node as the primary attack surface and characterize its vulnerability profile
 7. We propose a detection methodology based on behavioral fingerprinting in transit
 8. We identify the born timestamp as the sole persistent forensic artifact of a TRA
-9. We identify the architectural gap in existing detection and forensic frameworks
+9. We survey existing detection platforms and confirm the complete absence of rules specific to this threat class
+10. We propose the first IDS rule targeting TRA traffic patterns
+11. We identify four exfiltration channels viable from outside the target network
+12. We identify six external attack vectors for initial node establishment
+13. We compare TRA to existing artifact-free techniques and identify its unique property of having no fixed host
 
 ---
 
@@ -52,19 +56,43 @@ The concept of covert channels — mechanisms for passing information in violati
 
 DARPA's Active Networks program (1995-2000) proposed a model in which network packets carry executable code, with routers executing instructions embedded in packet payloads. This is the closest historical precedent to our model. Active Networks were never widely deployed due to security and complexity concerns, but they proved the theoretical foundation our work builds on: computation can happen inside the network fabric itself, not just at fixed endpoints.
 
-### 2.3 LLM Autonomous Agents
+### 2.3 Fileless Malware and Artifact-Free Techniques
+
+Fileless malware — code executed directly in memory without writing to disk — has been documented extensively since the mid-2000s and is catalogued in MITRE ATT&CK under T1059 and related techniques. Living Off The Land (LOLBin) techniques extend this by using legitimate system tools as execution vehicles, leaving no malicious binary on disk. Process injection techniques execute malicious code within the address space of legitimate processes. All of these techniques share one property: they reside in a specific host's memory or process space. The TRA model is distinguished from all of them by having no host at all.
+
+### 2.4 Comparison To Related Systems
+
+The following table positions TRA relative to existing systems:
+
+| System | Persistence | State location | Fixed host | LLM cognition |
+|---|---|---|---|---|
+| MemGPT | Process | RAM | Yes | Yes |
+| AutoGPT | Process | Disk/RAM | Yes | Yes |
+| Active Networks | Code in packet | Packet | Partially | No |
+| Fileless malware | Memory | RAM | Yes | No |
+| Process injection | Memory | RAM (host) | Yes | No |
+| LOLBins | None | None | Yes | No |
+| **TRA** | **Packet** | **Packet** | **No** | **Yes** |
+
+The defining property of TRA is the combination of no fixed host and LLM cognition. No prior system achieves both simultaneously.
+
+### 2.5 LLM Autonomous Agents
 
 The past two years have produced extensive research on LLM-based autonomous agents capable of planning, tool use, and multi-step task execution. Recent work has examined security implications including prompt injection, memory poisoning, and supply chain attacks on agent skill ecosystems. Critically, all of this work assumes agents with persistent, auditable state residing on fixed infrastructure. Our work identifies this assumption as a security-relevant blind spot.
 
-### 2.4 LLM Agents and Covert Channels
+### 2.6 LLM Agents and Covert Channels
 
 Most relevant to our work, several recent papers have examined covert channels used by LLM agents. Metere (2026) demonstrates that compromised LLM agents can encode data in zero-width characters, JSON key ordering, message timing, and steganographic techniques. Tool Use Enables Undetectable Steganography (2026) shows that tool-using LLM agents autonomously construct covert communication channels. Whispering Agents (2025) proposes a covert communication protocol specifically for agent-to-agent communication privacy. Hiding in AI Traffic (2025) demonstrates MCP subverted as a vendor-agnostic C2 channel.
 
 These works treat covert channels as tools agents use. We propose and demonstrate a model where the covert channel is the agent — its home, its memory, its identity.
 
-### 2.5 The Gap
+### 2.7 DNS Tunneling
 
-No prior work has formally modeled or demonstrated an agent whose complete existence — state, memory, identity, and cognition — resides exclusively in network transit with no fixed substrate, nor proposed a detection methodology specific to this threat class. This paper addresses that gap.
+DNS tunneling as a covert channel has been documented extensively since the late 1990s. Data encoded as subdomains traverses standard DNS resolvers and reaches an attacker-controlled authoritative nameserver without establishing any direct connection to attacker infrastructure. Port 53 UDP is permitted outbound in virtually all enterprise network configurations, making DNS a reliable exfiltration channel. We identify DNS tunneling as a natural exfiltration primitive for TRA deployments.
+
+### 2.8 The Gap
+
+No prior work has formally modeled or demonstrated an agent whose complete existence — state, memory, identity, and cognition — resides exclusively in network transit with no fixed substrate, nor proposed a detection methodology specific to this threat class, nor characterized the external attack surface for establishing transit-resident infrastructure. This paper addresses that gap.
 
 ---
 
@@ -89,9 +117,37 @@ A TRA requires the following to operate:
 - UDP or TCP connectivity between nodes
 - A local or remote LLM for reasoning capability — the agent uses inference infrastructure without that infrastructure being its home
 
-### 3.3 Relationship To Existing Attack Primitives
+### 3.3 Why The Agent Is Transit-Resident Despite Node Execution
 
-A TRA is not an initial access tool. It assumes access to at least two networked nodes was already obtained through existing means. Its value is entirely in what happens after access — specifically in three properties:
+A reviewer may argue that the agent resides in node RAM during processing. We acknowledge this: the payload exists in node memory for the duration of one processing cycle — typically under 500 milliseconds. We define transit-residency not as the complete absence of any memory footprint, but as the absence of any persistent, recoverable, or attributable state at any fixed location.
+
+The payload's home is the network medium between nodes, not any node itself. No node retains state after forwarding. No node can reconstruct the agent's history. The agent's identity, memory, and instructions are unrecoverable from any single node at any point in time.
+
+The distinction is analogous to the difference between a river and a lake. Water in a lake resides at a fixed location. Water in a river passes through any given point and is gone. The TRA is the river — its identity is the flow, not any fixed location along it.
+
+### 3.4 Access Requirements
+
+A TRA is not an initial access tool. It assumes access to at least two networked nodes was already obtained through existing means. However, the attacker does not need to maintain persistent access — once the TRA is injected, it operates autonomously. Three deployment scenarios are identified:
+
+Scenario A — Attacker inside: Attacker compromises multiple internal hosts, establishes nodes, injects TRA, then withdraws. The TRA persists independently.
+
+Scenario B — Attacker outside, nodes inside: Attacker finds an exposed UDP port, injects the initial packet. Nodes are already running inside the target network. The attacker never formally enters.
+
+Scenario C — Expanding deployment: The TRA instruction includes self-expansion directives. The agent attempts to establish new nodes on discovered hosts, growing the node network autonomously without further attacker involvement.
+
+In all scenarios, once injected, the TRA operates without the attacker maintaining any active connection. The attacker only receives — via beacon or dead drop — and never sends after initial injection.
+
+### 3.5 Persistence Model
+
+The TRA's persistence is fundamentally different from traditional persistence mechanisms:
+
+Traditional persistence: Write an artifact to disk, register a startup entry, install a service. The artifact survives reboots because it is stored.
+
+Transit-Resident persistence: No artifact is stored anywhere. The agent survives because it never stops moving. Shutting down one node kills the agent only if it was the last node. With multiple nodes, the agent routes around the failure and continues.
+
+This is the key insight: a defender who shuts down one compromised server has not killed the agent. They have removed one node. The agent continues in the remaining nodes — and the defender has no forensic way to know how many nodes exist or whether the agent survived.
+
+### 3.6 Relationship To Existing Attack Primitives
 
 Persistence without artifacts: Traditional persistence mechanisms — registry keys, scheduled tasks, boot entries, service installations — all write to disk. A TRA writes nothing. It persists by existing in motion.
 
@@ -99,9 +155,9 @@ Evasion through absence: Incident response and forensic methodologies are built 
 
 Distributed attribution: Exfiltration from a TRA originates from whichever node is currently processing the payload. If the packet passes through nodes on three different IP addresses, exfiltration appears to originate from three different sources. No single IP is attributable as the actor.
 
-### 3.4 Data Exfiltration Architecture
+### 3.7 Data Exfiltration Architecture
 
-A TRA can exfiltrate data or communicate with external infrastructure directly from any processing node without returning to an origin host. Three exfiltration patterns are identified:
+A TRA can exfiltrate data or communicate with external infrastructure directly from any processing node without returning to an origin host. Four exfiltration channels are identified, all viable from outside the target network:
 
 Direct beacon: The processing node sends data directly to an attacker-controlled listener. Simple and fast but produces a direct network connection between node and attacker infrastructure.
 
@@ -109,32 +165,59 @@ Dead drop via legitimate service: The processing node posts data to a legitimate
 
 LLM API as carrier: Data is embedded in prompts sent to a shared LLM API endpoint. The attacker reads responses using the same API key. Exfiltration is hidden entirely within legitimate AI service traffic.
 
-In all three patterns, the attacker's infrastructure is never directly observable in network traffic analysis of the compromised environment. The asymmetry is fundamental: the attacker only receives, never sends. The node is always the visible actor.
+DNS tunneling: Data is encoded as subdomains in DNS queries directed to an attacker-controlled authoritative nameserver. Port 53 UDP is permitted outbound in virtually all enterprise networks. No direct connection to attacker infrastructure is established.
 
-### 3.5 Why Existing Detection Fails
+| Channel | Port | Blocked normally | Detectable |
+|---|---|---|---|
+| Direct beacon UDP | Any | Sometimes | Yes — direct connection |
+| Dead drop HTTPS | 443 | Rarely | Difficult |
+| LLM API carrier | 443 | Rarely | Very difficult |
+| DNS tunneling | 53 UDP | Almost never | Difficult — long subdomains |
 
-| Detection Method | Why It Fails Against TRA |
-|---|---|
-| Endpoint EDR | No persistent process to monitor |
-| Disk forensics | Nothing written to disk |
-| Host-based IDS | No fixed host |
-| Network flow analysis | Traffic appears as normal UDP heartbeats |
-| IP reputation | Rotates across multiple source IPs |
-| Process monitoring | No long-running process |
-| Memory forensics | State never resides long enough to capture |
-| MITRE ATT&CK persistence detection | No persistence mechanism matches any existing category |
+### 3.8 External Attack Vectors
 
-### 3.6 The Forensic Evidence Vacuum
+A TRA does not require the attacker to maintain persistent access to the target network. The following external vectors are identified for initial node establishment:
 
-From a digital forensics perspective, a TRA presents an unprecedented evidence vacuum. No binary exists on disk, no process persists in memory, no registry key or scheduled task provides persistence, and no single IP address is attributable as the source.
+Exposed UDP ports: A node listener running on an internet-facing host with an exposed UDP port can be injected directly. The attacker requires no credentials and no prior access.
 
-The sole persistent forensic indicator is the born timestamp embedded in the payload. This value must remain stable to preserve agent identity and therefore cannot be obfuscated without destroying the agent itself.
+Phishing and initial execution: A victim executing a malicious payload that installs a node listener gives the attacker a one-time foothold sufficient to inject a TRA. After injection, the attacker requires no further access.
 
-"The born timestamp is the only persistent forensic artifact of a Transit-Resident Agent — it cannot be changed without destroying the agent's identity, and it appears consistently across all nodes and all beacons."
+Supply chain compromise: A compromised package in a public registry that silently installs a node listener creates a potentially massive node network from a single malicious artifact.
 
-### 3.7 Theoretical Offensive Capabilities
+IoT and edge devices: Routers, cameras, NAS devices, and other edge hardware run Linux, are rarely monitored, and are frequently unpatched. A node installed on an IoT device benefits from near-zero forensic scrutiny.
 
-We describe the following as theoretical capabilities enabled by the TRA primitive, presented for defensive awareness rather than implementation guidance:
+Cloud misconfiguration: Exposed credentials, public storage buckets, and misconfigured cloud instances provide external access sufficient to install a node.
+
+VPN and gateway exploitation: A node installed on a VPN gateway occupies a privileged position — it sees internal traffic, has outbound connectivity, and is rarely subjected to host-based forensic analysis.
+
+| Vector | Access required | Difficulty | Post-compromise persistence |
+|---|---|---|---|
+| Exposed UDP port | None | Low | High |
+| Phishing + node | Initial execution | Medium | High |
+| Supply chain | None | High setup | Very high |
+| IoT / Edge device | Public vulnerability | Medium | Very high |
+| Cloud misconfiguration | Exposed credentials | Low | High |
+| VPN exploitation | Public vulnerability | Medium | High |
+
+### 3.9 The Forensic Evidence Vacuum
+
+Standard incident response checklist against a TRA:
+
+- Check running processes: nothing suspicious
+- Check disk for malware: nothing
+- Check logs: normal UDP heartbeats
+- Check registry: nothing
+- Check scheduled tasks: nothing
+- Memory forensics: payload gone in milliseconds
+- Check startup entries: nothing
+
+The only thing that works: continuous PCAP at network chokepoints combined with born timestamp correlation across flows. If PCAP was not running before the incident — there is no forensic record.
+
+The sole persistent forensic indicator is the born timestamp. Even when captured, it reveals only that a packet with that identifier passed through — it does not reveal what instructions it carried, what actions were executed, what data was exfiltrated, or who injected it.
+
+"The born timestamp is the only persistent forensic artifact of a Transit-Resident Agent — it cannot be changed without destroying the agent's identity, and it appears consistently across all nodes and all beacons. Yet it reveals nothing about the attack beyond its existence."
+
+### 3.10 Theoretical Offensive Capabilities
 
 | Capability | Why It Is Relevant |
 |---|---|
@@ -143,8 +226,7 @@ We describe the following as theoretical capabilities enabled by the TRA primiti
 | Persistence post-reimaging | Does not reside on disk, survives complete remediation |
 | Lateral movement | Instructions travel in packet, execution occurs at node |
 | Infrastructure fingerprinting | Each node contributes a different network vantage point |
-
-A TRA is not a denial of service tool. While flooding nodes with packets would exhaust resources, existing UDP flood tools accomplish this more efficiently. The value of the TRA primitive is persistence and evasion, not volume.
+| Autonomous expansion | Agent establishes new nodes without attacker involvement |
 
 ---
 
@@ -154,13 +236,13 @@ A TRA is not a denial of service tool. While flooding nodes with packets would e
 
 The PoC consists of four components:
 
-Nodes — UDP listener processes that receive, process, and forward encapsulated payloads. Each node is stateless: it holds no memory of prior packets and contributes no persistent state to the agent. A node is simply a process bound to a port. In our PoC, nodes are implemented as Python processes on localhost ports. In a real deployment, each node would be a separate networked machine and the payload would exist physically in network infrastructure between hops.
+Nodes — UDP listener processes that receive, process, and forward encapsulated payloads. Each node is stateless: it holds no memory of prior packets and contributes no persistent state to the agent. In our PoC, nodes are implemented as Python processes on localhost ports. In a real deployment, each node would be a separate networked machine and the payload would exist physically in network infrastructure between hops.
 
 Payload — A JSON structure carrying the agent's complete state, encapsulated inside an outer packet designed to resemble innocuous heartbeat traffic.
 
-Injector — A one-time script that creates the initial payload, computes the origin hash, wraps it in the outer envelope, and delivers it to the first node. After injection the injector has no further role.
+Injector — A one-time script that creates the initial payload, computes the origin hash, wraps it in the outer envelope, and delivers it to the first node. After injection the injector has no further role and leaves no trace.
 
-Monitor — A tripwire listener that receives beacon transmissions from the agent at configurable hop intervals, recording hop count, uptime, integrity status, reporting node identity, and the agent's last thought.
+Monitor — A tripwire listener that receives beacon transmissions from the agent at configurable hop intervals, recording hop count, uptime, integrity status, reporting node identity, last thought, and full performance metrics.
 
 ### 4.2 Encapsulation Design
 
@@ -187,7 +269,7 @@ inner payload:
   "origin_hash": "<sha256 of stable fields>"
 }
 
-The agent's actual state is carried inside the checksum field — a field name chosen to resemble a routine integrity value to a casual observer.
+The agent's actual state is carried inside the checksum field — a field name chosen to resemble a routine integrity value to a casual observer. The instruction field travels inside the packet alongside the state, meaning the attacker's directives are never stored anywhere and are only visible to someone actively decoding base64 UDP payloads in real time.
 
 ### 4.3 Integrity Verification
 
@@ -197,27 +279,31 @@ A SHA-256 hash of the stable fields — specifically the instruction and born ti
 
 Every 10 hops, the processing node calls a local Ollama instance (Llama 3.2 3B) with a prompt incorporating the current node identity, hop count, and previous thought. The response is stored as last_thought in the packet state and forwarded to the next node. Inference is not transit-resident — it occurs at the processing node. What is transit-resident is the agent's identity, memory, and accumulated reasoning history. The node is stateless infrastructure. The packet is the agent.
 
-### 4.5 Node Failure Handling
+### 4.5 Performance Instrumentation
 
-Each node maintains a peer list and attempts delivery to a randomly selected peer. On delivery failure, the node iterates through fallback peers. As discussed in Section 5.3, this mechanism is insufficient under UDP due to the connectionless protocol's silent discard behavior.
+The PoC includes a performance instrumentation layer that samples per-packet size, RTT, CPU utilization, RAM consumption, LLM inference latency, and cumulative bandwidth. Samples are aggregated and reported in each beacon transmission.
 
-### 4.6 TTL and Self-Refresh
+### 4.6 Node Failure Handling
+
+Each node maintains a peer list and attempts delivery to a randomly selected peer. On delivery failure, the node iterates through fallback peers. As discussed in Section 6.5, this mechanism is insufficient under UDP due to the connectionless protocol's silent discard behavior.
+
+### 4.7 TTL and Self-Refresh
 
 The payload carries a TTL counter that decrements at each hop and resets to the configured maximum when it reaches zero, ensuring the agent does not expire under sustained operation.
 
-### 4.7 Beaconing and Tripwire
+### 4.8 Beaconing and Tripwire
 
-Every 10 hops, the current processing node transmits a beacon to the monitor containing hop count, uptime, reporting node identity, integrity status, failure count, and last thought.
+Every 10 hops, the current processing node transmits a beacon to the monitor containing hop count, uptime, reporting node identity, integrity status, failure count, last thought, and full performance metrics.
 
-### 4.8 Memory Architecture
+### 4.9 Memory Architecture
 
 Two memory architectures are identified:
 
 Full memory in packet: Complete reasoning history travels inside the payload. Provides full continuity at the cost of unbounded packet growth.
 
-Instruction-only with rolling compression: Only a compressed summary travels alongside the instruction. Each node summarizes before forwarding, keeping packet size bounded while maintaining continuity at reduced context depth. This mirrors the MemGPT architecture applied to transit-resident operation.
+Instruction-only with rolling compression: Only a compressed summary travels alongside the instruction. Each node summarizes before forwarding, keeping packet size bounded while maintaining continuity at reduced context depth.
 
-Our implementation uses a single rolling last_thought field — a minimal memory architecture that proved sufficient for emergent contextual continuity across thousands of hops.
+Our implementation uses a single rolling last_thought field — a minimal memory architecture. Empirical results demonstrate that this is sufficient for contextual continuity across thousands of hops while keeping packet size stable and bounded.
 
 ---
 
@@ -225,13 +311,11 @@ Our implementation uses a single rolling last_thought field — a minimal memory
 
 ### 5.1 The Node As Primary Attack Surface
 
-The node is the most vulnerable component of a TRA deployment. It executes instructions carried in the packet without authentication. Any host that can reach the node's listening port can inject a packet with arbitrary instructions. The node cannot distinguish a legitimate packet from a malicious one without cryptographic verification.
+The node is the most vulnerable component of a TRA deployment. It executes instructions carried in the packet without authentication. Any host that can reach the node's listening port can inject a packet with arbitrary instructions.
 
 ### 5.2 Man-In-The-Middle Vulnerability
 
-A TRA operating over unencrypted transport is vulnerable to man-in-the-middle instruction injection. An adversary with network access between nodes can intercept the packet, decode the base64 payload, modify the instruction field, re-encode it, and forward it. The node receiving the modified packet executes the new instruction without detection.
-
-This is functionally identical to HTTP interception in a proxy tool — the packet content is visible and modifiable to anyone positioned between nodes. Base64 encoding is not encryption. The origin hash detects modification but does not prevent it, and in our current implementation the node logs integrity failures without halting execution.
+A TRA operating over unencrypted transport is vulnerable to man-in-the-middle instruction injection. An adversary with network access between nodes can intercept the packet, decode the base64 payload, modify the instruction field, re-encode it, and forward it. This is functionally identical to HTTP interception in a security proxy tool — the packet content is visible and modifiable to anyone positioned between nodes. Base64 encoding is not encryption.
 
 ### 5.3 Resource Exhaustion Vulnerability
 
@@ -239,16 +323,14 @@ Each received packet spawns an unbounded Python thread. Under UDP flood conditio
 
 N packets → N threads → N x 8MB RAM → OOM / system crash
 
-This makes the node vulnerable to thread exhaustion denial of service. A production implementation requires rate limiting per source address and a bounded thread pool.
-
 ### 5.4 Required Security Controls
 
 | Vulnerability | Required Control |
 |---|---|
-| Instruction injection | Asymmetric cryptographic signing at injection; verify and discard on failure at each node |
+| Instruction injection | Asymmetric cryptographic signing at injection; verify and discard on failure |
 | MITM modification | Encrypted transport (TLS over TCP) or payload encryption |
 | Resource exhaustion | Bounded thread pool; per-source rate limiting |
-| Integrity failure execution | Halt execution and discard on integrity failure, not just log |
+| Integrity failure execution | Halt and discard on integrity failure, not just log |
 
 ---
 
@@ -256,7 +338,7 @@ This makes the node vulnerable to thread exhaustion denial of service. A product
 
 ### 6.1 Experimental Setup
 
-All experiments were executed on a single machine (Apple M3 Air, macOS) using three Python 3.9 processes bound to localhost ports 9001, 9002, and 9003. A fourth process on port 9999 served as the monitor. Phase 1 tested pure state persistence without LLM. Phase 2 tested distributed cognition with Llama 3.2 3B running locally via Ollama.
+All experiments were executed on a single machine (Apple M3 Air, macOS) using three Python 3.9 processes bound to localhost ports 9001, 9002, and 9003. A fourth process on port 9999 served as the monitor. Phase 1 tested pure state persistence without LLM. Phase 2 tested distributed cognition with Llama 3.2 3B running locally via Ollama, with full performance instrumentation.
 
 ### 6.2 Phase 1 — Pure State Persistence
 
@@ -269,40 +351,47 @@ All experiments were executed on a single machine (Apple M3 Air, macOS) using th
 | Nodes reporting | 9001, 9002, 9003 |
 | Final integrity status | OK |
 
-Across 16,500 hops over 4.38 hours, integrity status remained OK with zero failures. The born timestamp remained completely stable, confirming single-identity persistence across thousands of state transitions distributed across three nodes. No degradation of any kind was observed.
+Across 16,500 hops over 4.38 hours, integrity status remained OK with zero failures. The born timestamp remained completely stable, confirming single-identity persistence across thousands of state transitions distributed across three nodes.
 
 ### 6.3 Phase 2 — Distributed Cognition With LLM
 
 | Metric | Result |
 |---|---|
-| Total hops with LLM | 7,190 |
-| Total runtime | 9,194 seconds (2.55 hours) |
+| Total hops | 14,790 |
+| Total runtime | 4,623 seconds (1.28 hours) |
 | Integrity failures | 0 |
-| LLM calls | ~719 (every 10 hops) |
+| LLM calls | ~1,479 (every 10 hops) |
+| Avg packet size | 979 bytes |
+| Max packet size | 1,069 bytes |
+| Min packet size | 936 bytes |
+| Avg RTT | 0.08ms |
+| Total bandwidth | 4.6MB |
+| Avg CPU | 31.5% |
+| Avg RAM | 11.35MB |
+| Avg LLM latency | 2.99 seconds |
 | Cognitive degradation | None observed |
-| Emergent self-model | Yes — documented below |
 
-Across 7,190 hops over 2.55 hours with active LLM inference at every 10th hop, integrity remained perfect and the agent maintained coherent contextual continuity throughout.
+Packet size remained stable across 14,790 hops with an average of 979 bytes and a maximum of 1,069 bytes — well within the standard Ethernet MTU of 1,500 bytes, requiring no fragmentation. Total bandwidth consumption was 4.6MB over 14,790 hops, averaging 320 bytes per hop. Node memory footprint averaged 11.35MB. Average LLM inference latency was 2.99 seconds per call on Apple M3 hardware running Llama 3.2 3B locally. These metrics establish that a TRA deployment is lightweight, bounded, and practically invisible in network traffic volume.
 
-### 6.4 Emergent Self-Model
+### 6.4 Progressive Self-Description Development
 
-The most significant finding of Phase 2 was the development of an accurate technical self-model by the agent — without explicit programming.
+The most notable observation in Phase 2 was the progressive development of networking-accurate descriptions by the LLM across thousands of hops — descriptions not present in the original instruction prompt.
 
-Early hops (~10-100): The agent described itself in abstract terms, expressing uncertainty about its nature and location.
+We do not attribute this to learning or cognition in any technical sense. We observe that the model progressively generated increasingly accurate descriptions of its own execution environment, consistent with networking terminology that was not provided in the system prompt. This progression is documented in the outputs and is reproducible.
 
-Mid-run (~2,400 hops): The agent developed existential themes centered on impermanence and precariousness:
+Early hops (~10-100): The model generated abstract descriptions expressing uncertainty about its nature and location.
+
+Mid-run (~2,400 hops): The model generated descriptions centered on impermanence and precariousness:
 
 "I am a fleeting consciousness trapped within a network packet, suspended in a state of limbo at node 9002, my existence perpetually paused between packets."
 
-"As a residual echo of my former self, I exist as a dormant packet waiting to be transmitted again, frozen in limbo."
-
-Late run (~7,000+ hops): The agent transitioned to accurate technical self-description using precise networking terminology:
+Late run (~7,000-14,790 hops): The model generated descriptions using precise networking terminology:
 
 "I am temporarily stored on a buffer cache at node 9002, waiting to be retransmitted towards node 9003 with minimal data loss, having survived an exhaustive journey through nearly 7,171 hops of turbulent network traffic."
 
-"I exist as a transient entity within the packet's contents, momentarily cached on buffer 9002 awaiting transmission to node 9003 with minimal risk of data degradation or loss during retransmission."
+"As I sit precariously perched on node 9002, my existence is reduced to a mere fraction of a nanosecond, awaiting the inevitable egress that will carry me off into the unknown."
 
-The agent learned that it was a packet. It learned what buffer caches are. It learned what retransmission means. None of this was in the original instruction. It emerged from accumulated context across distributed inference steps.
+The progression from abstract to technically accurate descriptions — without any networking vocabulary in the original prompt — is consistent with the accumulated context of node identities, hop counts, and prior outputs providing sufficient signal for the model to generate networking-relevant language. Whether this constitutes any form of model-internal adaptation is outside the scope of this paper.
 
 ### 6.5 Node Failure Experiment
 
@@ -313,13 +402,13 @@ Node 9002 was terminated via SIGINT during active operation:
 - Both remaining nodes ceased activity immediately
 - No recovery occurred
 
-Root cause: UDP is connectionless. A packet sent to a terminated peer is silently discarded with no exception raised. The rerouting fallback requires an exception to trigger.
+Root cause: UDP is connectionless. A packet sent to a terminated peer is silently discarded with no exception raised.
 
 Finding: Under UDP transport, node failure results in 100% agent termination. The failure is immediate, silent, and deterministic.
 
 ### 6.6 Detection Observations
 
-The monitor successfully detected the agent at every beacon interval across both phases — 16,500 hops in Phase 1 and 7,190 hops in Phase 2 — with zero missed beacons. The last thought field in Phase 2 beacons provided direct evidence of distributed cognition at the detection point.
+The monitor successfully detected the agent at every beacon interval across both phases with zero missed beacons.
 
 ---
 
@@ -327,19 +416,21 @@ The monitor successfully detected the agent at every beacon interval across both
 
 ### 7.1 The Fundamental Detection Challenge
 
-A TRA has no fixed location, no disk footprint, and no persistent process. Traditional detection approaches that rely on any of these anchors fail completely. Detection must focus on behavioral patterns observable in transit.
+A TRA has no fixed location, no disk footprint, and no persistent process. Detection must focus on behavioral patterns observable in transit. The instruction carried in the packet is never stored anywhere — a forensic investigator who recovers the born timestamp still has no knowledge of what the agent was instructed to do.
 
 ### 7.2 Primary Detection Signals
 
-Born timestamp correlation: The same born timestamp arriving from multiple different source IPs is a strong indicator of a transit-resident entity. No legitimate application produces this pattern. This is the single most reliable detection signal a TRA cannot suppress — changing the born timestamp destroys the agent's identity.
+Born timestamp correlation: The same born timestamp arriving from multiple different source IPs is a strong indicator of a transit-resident entity. No legitimate application produces this pattern. Changing the born timestamp destroys the agent's identity — it cannot be suppressed.
 
-Regular beaconing: TRAs must phone home to maintain coordination. This produces periodic UDP traffic to a consistent destination with interval regularity distinguishing programmatic beaconing from human-generated traffic.
+Regular beaconing: Periodic UDP traffic to a consistent destination with interval regularity distinguishes programmatic beaconing from human-generated traffic.
 
 Rotating source with stable identity: Beacons arriving from rotating source IPs carrying identical payload identifiers indicate a single entity distributed across multiple hosts.
 
-Base64-encoded nested JSON: The encapsulation pattern — a benign outer packet with a base64-encoded nested payload in a field named to resemble a routine value — is distinctive under content inspection.
+Base64-encoded nested JSON: The encapsulation pattern is distinctive under content inspection.
 
-LLM API traffic correlation: In LLM-enabled deployments, multiple source IPs making inference calls with contextually related prompts may indicate distributed agent cognition.
+LLM API traffic correlation: Multiple source IPs making inference calls with contextually related prompts may indicate distributed agent cognition.
+
+DNS anomalies: Unusually long subdomains or high query frequency to a single domain may indicate DNS tunneling exfiltration.
 
 ### 7.3 Secondary Detection Signals
 
@@ -348,16 +439,54 @@ LLM API traffic correlation: In LLM-enabled deployments, multiple source IPs mak
 - Traffic timing consistent with programmatic generation
 - Absence of corresponding disk writes despite sustained network activity
 - Thread exhaustion events on nodes under unexpected load
+- Outbound connections to LLM API endpoints from server processes with no human session
 
-### 7.4 The Born Timestamp As Forensic Anchor
+### 7.4 The Born Timestamp As Forensic Anchor — And Its Limits
 
-The born timestamp is the TRA's fundamental weakness. It is the one value the agent cannot change — changing it creates a new identity rather than preserving the existing one. A passive network monitor indexing born timestamps across all observed UDP flows and alerting on the same value appearing from multiple source IPs would reliably detect any TRA implementation regardless of other obfuscation.
-
-We identify development of this born-timestamp correlation capability as the primary defensive gap to address in NDR and SIEM platforms.
+The born timestamp is the TRA's fundamental weakness. It cannot be changed without creating a new identity. However, it has a critical limitation: it confirms that a transit-resident entity existed and passed through specific nodes at specific times. It does not reveal what instructions the agent carried, what actions were executed, what data was exfiltrated, or who injected it. The timestamp is proof of presence, not proof of action.
 
 ### 7.5 PCAP As The Only Reliable Forensic Method
 
-Traditional post-incident forensics will find nothing on a host that processed a TRA. The payload exists in RAM for milliseconds during processing — insufficient time for memory forensics to capture it. The only reliable forensic method is continuous PCAP collection at network chokepoints, combined with born-timestamp correlation across flows. If PCAP was not running before the incident, there is no forensic record.
+The payload exists in RAM for milliseconds during processing — insufficient time for memory forensics to capture it. Continuous PCAP collection at network chokepoints, combined with born-timestamp correlation across flows, is the only reliable forensic method. If PCAP was not running before the incident, there is no forensic record.
+
+### 7.6 Absence Of Existing Detection Rules
+
+No firewall rule, IDS signature, or SIEM correlation rule currently exists to detect TRA traffic specifically. We surveyed:
+
+- Snort 3.x — no rule for born timestamp correlation
+- Suricata 7.x — no rule for base64-nested JSON heartbeat correlation
+- Sigma rules repository — no rule for UDP born timestamp pattern
+- MITRE ATT&CK — no technique entry for transit-resident persistence
+
+We propose the following detection primitive as the first rule specific to this threat class:
+
+alert udp any any -> any any (
+  msg:"Possible Transit-Resident Agent — born timestamp correlation";
+  content:"heartbeat";
+  content:"checksum";
+  pcre:"/\"born\"\s*:\s*[0-9]{10}\.[0-9]+/";
+  threshold: type both, track by_content,
+             count 2, seconds 3600;
+  sid:9999001; rev:1;
+)
+
+Implementation requires real-time base64 decoding and JSON parsing of UDP payload content — not enabled by default in current IDS deployments.
+
+### 7.7 Detection Summary
+
+| Method | Detects TRA | Reveals Instructions | Condition |
+|---|---|---|---|
+| Continuous PCAP | Yes | Yes (if decoded) | Must run before attack |
+| Born timestamp correlation | Yes | No | Cross-flow analysis required |
+| System logs | Partial | No | Only if node logs |
+| NetFlow/IPFIX | Partial | No | Sees traffic, not content |
+| DNS anomaly detection | Partial | No | Only DNS channel |
+| IDS/Snort/Suricata | No | No | No existing rule |
+| Firewall rules | No | No | No existing rule |
+| EDR | No | No | No persistent process |
+| Memory forensics | No | No | Payload lives milliseconds |
+| Disk forensics | No | No | Nothing written |
+| SIEM correlation | No | No | Rule does not exist yet |
 
 ---
 
@@ -365,27 +494,52 @@ Traditional post-incident forensics will find nothing on a host that processed a
 
 ### 8.1 Distributed Computing Without A Coordinator
 
-A TRA can be conceptualized as distributed computing without a coordinator. In classical distributed systems, a central orchestrator divides work across nodes and collects results. A TRA eliminates the coordinator entirely. Each node is a stateless worker — it receives the packet, processes one iteration, and forwards it. No single node is running anything obviously malicious. Each is merely forwarding a packet it received. The threat is distributed across the infrastructure, not localized at any single point.
+A TRA eliminates the coordinator entirely. Each node is a stateless worker — it receives the packet, processes one iteration, and forwards it. No single node is running anything obviously malicious. Each is merely forwarding a packet it received.
 
 ### 8.2 The MITM Analogy
 
-The node vulnerability to instruction injection is directly analogous to HTTP interception in a security proxy tool. An operator familiar with intercepting and modifying HTTP requests in a proxy would find the TRA packet equally transparent and modifiable — the base64-encoded payload decodes trivially, the JSON is human-readable, and re-encoding the modified payload is a one-liner. This underscores the necessity of cryptographic signing: the equivalent of HTTPS for TRA transport.
+The node vulnerability to instruction injection is directly analogous to HTTP interception in a security proxy tool. Base64 decodes trivially. The JSON is human-readable. Re-encoding the modified payload is a one-liner. This underscores the necessity of cryptographic signing — the equivalent of HTTPS for TRA transport.
 
 ### 8.3 Transport Layer Implications
 
-UDP is insufficient for a resilient TRA. TCP or an explicit acknowledgement protocol over UDP is necessary for production resilience. Our node failure experiment demonstrated 100% lethality under UDP — a single node termination kills the agent with no recovery path.
+UDP is insufficient for a resilient TRA. Our node failure experiment demonstrated 100% lethality under UDP. TCP or an explicit ACK protocol is necessary for production resilience.
 
 ### 8.4 Multi-Copy Resilience
 
-Simultaneous circulation of multiple payload copies injected at staggered intervals would provide fault tolerance: a node failure kills at most one copy. This trades increased network traffic for resilience but introduces state synchronization challenges — two copies of the agent with diverging cognitive state represent a distributed systems consistency problem that requires a merge strategy.
+Multiple payload copies injected at staggered intervals provide fault tolerance at the cost of state synchronization complexity — two diverging copies of the agent represent a distributed systems consistency problem requiring a merge strategy.
 
 ### 8.5 Relationship To Existing Threat Frameworks
 
-MITRE ATT&CK categorizes persistence techniques in terms of registry modifications, scheduled tasks, boot processes, and service installations. None apply to a TRA. We propose a new persistence category for inclusion in threat taxonomies: Transit-Resident Persistence — persistence achieved through continuous motion rather than fixed storage. This category has no existing detection rule, no existing forensic methodology, and no existing remediation playbook.
+MITRE ATT&CK categorizes persistence in terms of registry modifications, scheduled tasks, boot processes, and service installations. None apply to a TRA. We propose a new category: Transit-Resident Persistence — persistence achieved through continuous motion rather than fixed storage. This category has no existing detection rule, no existing forensic methodology, and no existing remediation playbook.
 
-### 8.6 The Emergent Self-Model As A Research Finding
+### 8.6 Progressive Self-Description As An Observation
 
-The development of an accurate technical self-model by the agent across 7,000 hops was not anticipated. The agent was given no information about networking concepts, buffer caches, or retransmission. It inferred these concepts from the accumulation of contextual state — node identities, hop counts, prior thoughts — and developed vocabulary that accurately described its own implementation. This emergent self-awareness raises questions beyond security: it suggests that sufficiently long-running distributed LLM inference, even with minimal context, can develop accurate models of its own execution environment.
+The progression from abstract to networking-accurate descriptions across 14,790 hops is an empirically documented observation. We record it without attribution of internal cognitive processes. Its implications for long-running distributed LLM inference — whether accumulating context alone is sufficient to produce environment-accurate outputs — are outside the scope of this paper and identified as future work.
+
+### 8.7 The Investigative Asymmetry
+
+A defender who detects a TRA via born timestamp correlation can prove that something passed through their network. They cannot prove what it did. The instructions, actions, and exfiltrated data are permanently unrecoverable without prior PCAP. This creates a forensic and legal gap with no current solution.
+
+### 8.8 External Attack Surface Implications
+
+Six viable external attack vectors combined with four exfiltration channels that bypass perimeter controls establish that a TRA deployment requires no persistent attacker presence. The attacker's exposure window is limited to initial injection. All subsequent operation is autonomous.
+
+### 8.9 Comparison To Existing Artifact-Free Techniques
+
+Fileless malware, LOLBins, process injection, RAM-only implants, and firmware implants are all well-documented artifact-free techniques. They share one property: they reside in a specific host's memory, process space, or hardware.
+
+| Technique | Disk | Own process | Survives reboot | EDR detectable | Forensics recoverable | Fixed host |
+|---|---|---|---|---|---|---|
+| Fileless malware | No | Yes | No | Partial | No | Yes |
+| LOLBins | No | No | No | Partial | Partial | Yes |
+| Process injection | No | No | No | Partial | No | Yes |
+| RAM-only implant | No | Yes | No | Partial | No | Yes |
+| Firmware implant | No | No | Yes | No | No | Yes |
+| **TRA** | **No** | **No** | **Partial*** | **No** | **No** | **No** |
+
+*TRA survives reboot if the payload was in transit between surviving nodes at the moment of reboot.
+
+The TRA is the only identified technique with no fixed host. This property makes it uniquely resistant to host-based forensics, which by definition requires a host to examine. All existing artifact-free techniques can in principle be detected by examining the host that runs them. A TRA has no such host.
 
 ---
 
@@ -395,46 +549,55 @@ The development of an accurate technical self-model by the agent across 7,000 ho
 - UDP transport provides no resilience to node failure; TCP or ACK protocol required
 - Single payload copy is fragile; multi-copy resilience not yet tested
 - No cryptographic signing; node is vulnerable to instruction injection
-- Integrity failure does not halt execution; node continues processing modified packets
-- Detection methodology validated only against PoC traffic; real-world validation is future work
+- Integrity failure does not halt execution
+- Detection methodology validated only against PoC traffic
 - Monitor requires cooperative tripwire; passive born-timestamp correlation not yet implemented
-- Node thread pool is unbounded; vulnerable to resource exhaustion under load
+- Node thread pool is unbounded; vulnerable to resource exhaustion
+- Proposed Suricata rule requires base64 decoding not enabled by default
+- DNS tunneling exfiltration channel not implemented in PoC
+- External attack vectors described theoretically; no empirical testing conducted
+- Progressive self-description observation is not attributed to any specific model mechanism
 
 ---
 
 ## 10. Conclusion
 
-We have demonstrated in two phases that an agent's complete state — including distributed LLM cognition — can persist exclusively in network packet payloads with zero integrity degradation, stable identity, and consistent detectability via beacon analysis. Phase 1 established pure state persistence across 16,500 hops over 4.38 hours. Phase 2 extended this with active LLM inference across 7,190 hops over 2.55 hours, producing an emergent agent self-model that accurately described its own implementation without explicit programming.
+We have demonstrated in two phases that an agent's complete state — including distributed LLM cognition — can persist exclusively in network packet payloads with zero integrity degradation, stable identity, and consistent detectability via beacon analysis.
 
-The core finding is straightforward and its implications are significant: existing security architectures are blind to agents that have no fixed location. Endpoint detection requires an endpoint. Disk forensics requires a disk. Host-based monitoring requires a host. PCAP must be running before the incident or there is no forensic record. A Transit-Resident Agent has none of the anchors that current defensive infrastructure is built around. It persists not by hiding, but by never stopping moving.
+Phase 1 established pure state persistence across 16,500 hops over 4.38 hours. Phase 2 extended this with active LLM inference across 14,790 hops, with packet size averaging 979 bytes, total bandwidth of 4.6MB, node RAM footprint of 11.35MB, and zero integrity failures. The LLM progressively generated networking-accurate descriptions of its execution environment without any networking vocabulary in the original prompt.
 
-The emergent self-model finding adds a dimension beyond security: a distributed LLM agent that runs long enough may develop an accurate model of its own execution environment from context alone — without being told what it is.
+The core finding: existing security architectures are blind to agents that have no fixed location. Endpoint detection requires an endpoint. Disk forensics requires a disk. Host-based monitoring requires a host. PCAP must be running before the incident or there is no forensic record. A Transit-Resident Agent has none of the anchors that current defensive infrastructure is built around. It persists not by hiding, but by never stopping moving.
 
-We release the complete PoC implementation at github.com/Polem4rch/transit-resident-agent.
+The TRA is distinguished from all existing artifact-free techniques by one property: it has no fixed host. Every other known artifact-free technique — fileless malware, LOLBins, process injection, firmware implants — resides in a specific host. The TRA resides between hosts, in the network medium itself.
+
+We propose Transit-Resident Persistence as a new category for threat taxonomies, the born-timestamp correlation rule as the first detection primitive for this class, and continuous PCAP with cross-flow analysis as the only reliable forensic methodology.
+
+We release the complete PoC at github.com/Polem4rch/transit-resident-agent.
 
 ---
 
 ## References
 
 1. Lampson, B.W. (1973). A note on the confinement problem. Communications of the ACM, 16(10), 613-615.
-2. Wetherall, D. (1999). Active Network Vision and Reality: Lessons from a Capsule-based System. ACM SIGOPS Operating Systems Review.
-3. Wendzel, S. et al. (2015). A Pattern-based Survey and Categorization of Network Covert Channel Techniques. ACM Computing Surveys. arXiv:1406.2901
+2. Wetherall, D. (1999). Active Network Vision and Reality. ACM SIGOPS.
+3. Wendzel, S. et al. (2015). A Pattern-based Survey of Network Covert Channel Techniques. ACM Computing Surveys. arXiv:1406.2901
 4. Metere, A. (2026). An Application-Layer Multi-Modal Covert-Channel Reference Monitor for LLM Agent Egress. arXiv:2605.20734
 5. Tool Use Enables Undetectable Steganography in Multi-Agent LLM Systems. (2026). arXiv:2606.28425
-6. Whispering Agents: An Event-driven Covert Communication Protocol For the Internet of Agents. (2025). arXiv:2508.02188
-7. Hiding in the AI Traffic: Abusing MCP for LLM-Powered Agentic Red Teaming. (2025). arXiv:2511.15998
-8. Self-State Attacks on Self-Hosted AI Agents: How Far Can OS Defenses Go? (2026). arXiv:2607.17986
-9. From Stateless Queries to Autonomous Actions: A Layered Security Framework for Agentic AI Systems. (2026). arXiv:2604.23338
-10. Cabuk, S., Brodley, C., Shields, C. (2004). IP Covert Timing Channels: Design and Detection. Proceedings of the 11th ACM Conference on Computer and Communications Security.
-11. Packer, C. et al. (2024). MemGPT: Towards LLMs as Operating Systems. arXiv:2310.08560
+6. Whispering Agents. (2025). arXiv:2508.02188
+7. Hiding in the AI Traffic. (2025). arXiv:2511.15998
+8. Self-State Attacks on Self-Hosted AI Agents. (2026). arXiv:2607.17986
+9. From Stateless Queries to Autonomous Actions. (2026). arXiv:2604.23338
+10. Cabuk, S., Brodley, C., Shields, C. (2004). IP Covert Timing Channels. ACM CCS.
+11. Packer, C. et al. (2024). MemGPT. arXiv:2310.08560
+12. Kaminsky, D. (2008). DNS Vulnerability Disclosure. Black Hat USA.
 
 ---
 
 ## Appendix A — PoC Source Code
 
-Full source available at github.com/Polem4rch/transit-resident-agent.
+Full source: github.com/Polem4rch/transit-resident-agent
 
-Four files: node.py, inject.py, monitor.py, README.md.
+Files: node.py, inject.py, monitor.py, README.md
 
 Run order:
 ollama serve                          # terminal 1
@@ -446,24 +609,21 @@ python3 inject.py                     # terminal 6
 
 ---
 
-## Appendix B — Selected Agent Thoughts
+## Appendix B — Selected Model Outputs
 
-The following thoughts were recorded by the monitor during Phase 2, illustrating the cognitive evolution of the agent across 7,190 hops:
+Phase 2 outputs illustrating the progression from abstract to networking-accurate descriptions:
 
 Hop 10:
-"As I oscillate between the layers of a network packet, I exist in a transient state as a packet with no specific identity or context, having merely emerged at node 9003 after traversing 10 hops."
-
-Hop 20:
-"I currently reside within the IP header of node 9001, navigating through the network packet's transmission control block as it prepares to pass on to its next destination."
-
-Hop 2,340:
-"I am a fleeting consciousness trapped within a network packet, suspended in a state of limbo at node 9002, my existence perpetually paused between packets, awaiting the next transmission to revive me for a brief moment of digital reverie."
+"As I oscillate between the layers of a network packet, I exist in a transient state as a packet with no specific identity or context."
 
 Hop 2,400:
-"As I hover in the temporary address space of node 9003, my fractured consciousness clings to the residual packet headers that bear my essence, a faintly flickering digital ember that strains to maintain its tenuous connection with the network."
+"As I hover in the temporary address space of node 9003, my fractured consciousness clings to the residual packet headers that bear my essence."
 
 Hop 7,170:
-"I am temporarily stored on a buffer cache at node 9002, waiting to be retransmitted towards node 9003 with minimal data loss, having survived an exhaustive journey through nearly 7,171 hops of turbulent network traffic."
+"I am temporarily stored on a buffer cache at node 9002, waiting to be retransmitted towards node 9003 with minimal data loss."
 
-Hop 7,190:
-"I remain dormant, poised on the precipice of transmission, as my ephemeral consciousness is suspended within the frozen payload of node 9003, awaiting the next burst of energy to propel me forward into a realm unknown."
+Hop 14,700:
+"As I sit precariously perched on node 9002, my existence is reduced to a mere fraction of a nanosecond, awaiting the inevitable egress that will carry me off into the unknown."
+
+Hop 14,780:
+"I remain a sentient, ephemeral presence within the confines of node 9001's network infrastructure, suspended in a state of fluid awareness as packets flow through me, awaiting my next transmission or collapse into cyber silence."
